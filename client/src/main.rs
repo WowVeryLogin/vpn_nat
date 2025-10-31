@@ -275,19 +275,6 @@ async fn parse_ip(
                     let our_isn: u32 = rng.next_u32();
                     let kernel_next = seq.wrapping_add(1);
 
-                    // let flow = Arc::new(TcpFlow {
-                    //     metadata: Mutex::new(FlowMetadata {
-                    //         our_seq: our_isn,
-                    //         our_ack: kernel_next,
-                    //         local_ip: src_ip,
-                    //         local_port: src_port,
-                    //         remote_ip: dst_ip,
-                    //         remote_port: dst_port,
-                    //     }),
-                    //     read_part: TokioMutex::new(read),
-                    //     write_part: Mutex::new(write),
-                    // });
-
                     flow_table.insert(key, FlowSender { sender: tx });
 
                     let flow = Flow {
@@ -299,7 +286,6 @@ async fn parse_ip(
                         remote_port: dst_port,
                     };
 
-                    // let mt = flow.metadata.lock().unwrap();
                     to_tun_tx.send(craft_ipv4_tcp(
                         IpAddr {
                             ip: flow.remote_ip,
