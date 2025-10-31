@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    networks:
+      vpn_net:
+        ipv4_address: 172.28.0.3
+    expose:
+      - "1080:1080"
+
+  client:
+    build: ./client
+    depends_on: [ server ]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    networks:
+      vpn_net:
+        ipv4_address: 172.28.0.2
+    stdin_open: true
+    tty: true
+
+networks:
+  vpn_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
