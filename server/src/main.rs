@@ -1,5 +1,10 @@
 use anyhow::{Result, anyhow};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::io::Read;
+use std::{
+    fs::File,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -17,14 +22,21 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind("172.28.0.3:1080").await?;
     println!("SOCKS5 VPN server with NAT listening on 172.28.0.3:1080");
 
+    let path = Path::new("/etc/xchacha20.key");
+    let mut file = File::open(path)?;
+    let mut aead_key = vec![];
+    file.read_to_end(&mut aead_key)?;
+    let aead_key = aead_key.as_slice().into();
+
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             println!("Received SIGINT/SIGTERM, shutting down...");
         },
         _ = async {
             loop {
-                let (mut client, client_addr) = listener.accept().await.expect("receiving connection");
+                let (client, client_addr) = listener.accept().await.expect("receiving connection");
                 println!("new client: {}", client_addr);
+                let mut client = encryption::stream::TcpStream::new(client, aead_key);
 
                 tokio::spawn(async move {
                     if let Err(e) = handle_client(&mut client).await {
@@ -37,7 +49,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_client(client: &mut TcpStream) -> Result<()> {
+async fn handle_client(client: &mut encryption::stream::TcpStream) -> Result<()> {
     // ==== METHOD NEGOTIATION ====
     let mut header = [0u8; 2];
     client.read_exact(&mut header).await?;

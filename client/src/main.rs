@@ -1,10 +1,14 @@
 use anyhow::{Result, anyhow};
+use encryption::Key;
 use etherparse::{Ipv4HeaderSlice, PacketBuilder, TcpHeaderSlice, ip_number::TCP};
 use log::debug;
 use rand::RngCore;
 use std::{
     collections::HashMap,
+    fs::File,
+    io::Read,
     net::{Ipv4Addr, SocketAddr},
+    path::Path,
     sync::Arc,
 };
 use tokio::io::AsyncWriteExt;
@@ -28,12 +32,16 @@ struct FlowSender {
 
 type FlowTable<'a> = HashMap<FlowKey, FlowSender>;
 
-async fn auth_with_password(dst: SocketAddr) -> Result<TcpStream> {
+async fn auth_with_password(
+    dst: SocketAddr,
+    aead_key: &Key,
+) -> Result<encryption::stream::TcpStream> {
     let vpn_socks5_addr: SocketAddr = "172.28.0.3:1080".parse()?;
     let username = b"testuser";
     let password = b"testpass";
 
-    let mut connection = TcpStream::connect(vpn_socks5_addr).await?;
+    let mut connection =
+        encryption::stream::TcpStream::new(TcpStream::connect(vpn_socks5_addr).await?, aead_key);
 
     // |version, nmethods, method|
     connection.write_all(&[0x05, 1, 2]).await?;
@@ -142,7 +150,7 @@ struct Flow {
 impl Flow {
     async fn run_connection(
         mut self,
-        mut stream: TcpStream,
+        mut stream: encryption::stream::TcpStream,
         mut outcoming: UnboundedReceiver<Packet>,
         tun_tx: UnboundedSender<Vec<u8>>,
     ) {
@@ -208,6 +216,7 @@ impl Flow {
 }
 
 async fn parse_ip(
+    aead_key: &encryption::Key,
     mut from_tun_rx: UnboundedReceiver<Vec<u8>>,
     to_tun_tx: UnboundedSender<Vec<u8>>,
 ) -> Result<()> {
@@ -269,7 +278,7 @@ async fn parse_ip(
                     let dst = SocketAddr::from((dst_ip, dst_port));
 
                     debug!("trying to connect to socks5 {:?}", dst);
-                    let stream = auth_with_password(dst).await?;
+                    let stream = auth_with_password(dst, aead_key).await.unwrap();
                     let (tx, rx) = mpsc::unbounded_channel::<Packet>();
 
                     let our_isn: u32 = rng.next_u32();
@@ -315,6 +324,12 @@ async fn parse_ip(
 async fn main() -> Result<()> {
     env_logger::init();
 
+    let path = Path::new("/etc/xchacha20.key");
+    let mut file = File::open(path)?;
+    let mut aead_key = vec![];
+    file.read_to_end(&mut aead_key)?;
+    let aead_key = aead_key.as_slice().into();
+
     let mut config = configure();
     config
         .tun_name("tun0")
@@ -351,7 +366,7 @@ async fn main() -> Result<()> {
             let _ = tokio::join!(
                 receiver,
                 responder,
-                parse_ip(from_tun_rx, to_tun_tx)
+                parse_ip(aead_key, from_tun_rx, to_tun_tx)
             );
         } => {}
     }

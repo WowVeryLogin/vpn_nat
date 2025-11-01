@@ -1,8 +1,8 @@
 services:
   server:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
     networks:
       vpn_net:
         ipv4_address: 172.28.0.3
@@ -10,7 +10,9 @@ services:
       - "1080:1080"
 
   client:
-    build: ./client
+    build:
+      context: .
+      dockerfile: client/Dockerfile
     depends_on: [ server ]
     cap_add:
       - NET_ADMIN

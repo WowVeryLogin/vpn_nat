@@ -17,3 +17,14 @@ docker compose up --build
 docker exec -it $(docker ps -qf "ancestor=vpn_nat-client") /bin/bash
 curl -v http://44.205.165.147:80/headers
 ```
+
+## Update 1 (1.11.2025)
+
+Added AEAD level (Shadowsocks style): now TCP payload between client and server is encrypted.
+
+Planned TODOs:
+* properly split IPv4 logic in client to make it testable (separate reading bytes from TUN device and parsing them as IPv4/TCP):
+
+	* do something about blocking reads/writes on TUN device, create async wrap for it;
+* think about key exchange protocol for AEAD;
+* ShadowTLS: add TLS between client and server;

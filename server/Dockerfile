@@ -10,5 +10,6 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 
 COPY --from=builder /app/target/release/server /usr/local/bin/server
+COPY --from=builder /app/xchacha20.key /etc/
 
 ENTRYPOINT ["/usr/local/bin/server"]
