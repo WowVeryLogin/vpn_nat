@@ -28,3 +28,14 @@ Planned TODOs:
 	* do something about blocking reads/writes on TUN device, create async wrap for it;
 * think about key exchange protocol for AEAD;
 * ShadowTLS: add TLS between client and server;
+
+## Update 2 (2.11.2025)
+
+Started the refactoring and came up with following ideas:
+
+1. Testing: create docker container with TUN device and normal network interface; in there create a simple server that reads from TUN and writes to tcp connection raw IP packets and vice versa. Call this container from tests.
+This way TUN is isolated and we can test with a single almost static docker image.
+
+2. The problem of multiplexing TCP connections: we want a single connection per client to server. Doing it with raw TCP is hard, inventing and implementing my own framing protocol seems like road to even more problems. So the solution is to switch to QUIC. So clients will use a single QUIC connection to server and have separate QUIC streams for each "real" vpned connection.
+
+So the goal now is to add QUIC multiplexing.
