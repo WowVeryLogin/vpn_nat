@@ -10,5 +10,7 @@ rand.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 ringbuf.workspace = true
+rustls.workspace = true
 aead = "0.5.2"
 chacha20poly1305 = "0.10.1"
+rcgen = "0.14.5"

@@ -6,7 +6,7 @@ TUN_IP="10.0.0.2"
 TUN_DEST="10.0.0.1"
 
 echo "[vpn-client] Starting Rust VPN client in background..."
-/usr/local/bin/client &
+RUST_LOG=debug /usr/local/bin/client &
 
 CLIENT_PID=$!
 

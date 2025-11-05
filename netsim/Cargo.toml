@@ -1,11 +1,10 @@
 [package]
-name = "server"
+name = "netsim"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-encryption = { path = "../encryption" }
 tokio.workspace = true
+tun.workspace = true
 anyhow.workspace = true
-quinn.workspace = true
-rustls.workspace = true
+tokio-fd = "0.3.0"

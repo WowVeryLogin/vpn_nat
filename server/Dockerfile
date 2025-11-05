@@ -11,5 +11,7 @@ FROM debian:bookworm-slim
 
 COPY --from=builder /app/target/release/server /usr/local/bin/server
 COPY --from=builder /app/xchacha20.key /etc/
+COPY --from=builder /app/cert.pem /etc/
+COPY --from=builder /app/key.pem /etc/
 
 ENTRYPOINT ["/usr/local/bin/server"]

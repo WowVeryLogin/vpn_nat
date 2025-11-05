@@ -39,3 +39,13 @@ This way TUN is isolated and we can test with a single almost static docker imag
 2. The problem of multiplexing TCP connections: we want a single connection per client to server. Doing it with raw TCP is hard, inventing and implementing my own framing protocol seems like road to even more problems. So the solution is to switch to QUIC. So clients will use a single QUIC connection to server and have separate QUIC streams for each "real" vpned connection.
 
 So the goal now is to add QUIC multiplexing.
+
+## Update 3 (5.11.2025)
+
+Properly separated ipv4 parsing logic and prepared it for testing. Added QUIC with multiplexing (one QUIC connection per client) with self-signed certificates.
+
+1. Now we are prepared for creating good client tests: the main goal now is stability of the service and proper reaction to all corner-cases;
+
+2. Disabled AEAD: enable inner package encryption back;
+
+3. I'm extremely sloppy with errors, unwraping things as if there is no tomorrow: fix this, add retries, timeouts and process errors properly;

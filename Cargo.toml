@@ -2,7 +2,8 @@
 members = [
 	"encryption",
 	"client",
-	"server"
+	"server",
+	"netsim"
 ]
 resolver = "3"
 
@@ -15,3 +16,5 @@ anyhow = "1.0.100"
 env_logger = "0.11.8"
 log = { version = "0.4.28", features = ["max_level_debug"] }
 ringbuf = "0.4.8"
+quinn = "0.11.9"
+rustls = "0.23.34"
