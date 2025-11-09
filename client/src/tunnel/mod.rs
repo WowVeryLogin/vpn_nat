@@ -38,7 +38,7 @@ pub(crate) trait L3Stream {
 }
 
 pub(crate) trait VPNUpstream {
-    async fn new_connection(
+    fn new_connection(
         &mut self,
         key: FlowKey,
         rx: UnboundedReceiver<Vec<u8>>,
@@ -141,8 +141,7 @@ impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
                 let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 let notify = self
                     .upstream
-                    .new_connection(key, rx, self.shared_channel.clone())
-                    .await?;
+                    .new_connection(key, rx, self.shared_channel.clone())?;
                 self.flow_table.insert(
                     key,
                     TcpFlow {
