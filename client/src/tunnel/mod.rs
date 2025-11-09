@@ -70,10 +70,14 @@ impl<IPv4STREAM, UPSTREAM> Tunnel<IPv4STREAM, UPSTREAM> {
 }
 
 impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
-    async fn process_packet(&mut self, ip_hdr: Ipv4HeaderSlice<'_>, packet: &[u8]) -> Result<()> {
+    fn process_packet(
+        &mut self,
+        ip_hdr: Ipv4HeaderSlice<'_>,
+        packet: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
         if ip_hdr.protocol() != TCP {
             // support only TCP for now
-            return Ok(());
+            return Ok(None);
         }
 
         let tcp_start = ip_hdr.slice().len();
@@ -95,48 +99,38 @@ impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
                     log::debug!("killing connection");
                     flow.our_ack = seq.wrapping_add(1);
                     flow.our_seq = ack;
-                    self.tun
-                        .send(&craft_ipv4_tcp(
-                            flow.remote_addr,
-                            flow.local_addr,
-                            flow.our_seq,
-                            flow.our_ack,
-                            0x11, // ACK + FIN,
-                            &[],
-                        ))
-                        .await
-                        .unwrap();
                     flow.sender.send(payload.to_vec())?;
                     flow.notify.notify_one();
+                    let response = craft_ipv4_tcp(
+                        flow.remote_addr,
+                        flow.local_addr,
+                        flow.our_seq,
+                        flow.our_ack,
+                        0x11, // ACK + FIN,
+                        &[],
+                    );
                     self.flow_table.remove(&key);
-                    return Ok(());
+                    return Ok(Some(response));
                 }
 
                 if !payload.is_empty() {
                     flow.our_ack = seq.wrapping_add(payload.len() as u32);
                     flow.our_seq = ack;
-                    self.tun
-                        .send(&craft_ipv4_tcp(
-                            flow.remote_addr,
-                            flow.local_addr,
-                            flow.our_seq,
-                            flow.our_ack,
-                            0x10, // ACK
-                            &[],
-                        ))
-                        .await?;
-
                     flow.sender.send(payload.to_vec())?;
+                    return Ok(Some(craft_ipv4_tcp(
+                        flow.remote_addr,
+                        flow.local_addr,
+                        flow.our_seq,
+                        flow.our_ack,
+                        0x10, // ACK
+                        &[],
+                    )));
                 }
             } else if tcp_hdr.syn() {
                 let dst = SocketAddr::from((dst_ip, dst_port));
                 let src = SocketAddr::from((src_ip, src_port));
                 let our_isn: u32 = self.rng.next_u32();
                 let kernel_next = seq.wrapping_add(1);
-
-                self.tun
-                    .send(&craft_ipv4_tcp(dst, src, our_isn, kernel_next, 0x12, &[]))
-                    .await?;
 
                 let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 let notify = self
@@ -153,10 +147,18 @@ impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
                         notify,
                     },
                 );
+                return Ok(Some(craft_ipv4_tcp(
+                    dst,
+                    src,
+                    our_isn,
+                    kernel_next,
+                    0x12,
+                    &[],
+                )));
             }
         }
 
-        Ok(())
+        Ok(None)
     }
 
     pub(crate) async fn loop_read(&mut self) {
@@ -173,7 +175,9 @@ impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
                     };
                     match Ipv4HeaderSlice::from_slice(packet) {
                         Ok(header) => {
-                            self.process_packet(header, packet).await.unwrap();
+                            if let Ok(Some(response)) = self.process_packet(header, packet) {
+                                self.tun.send(&response).await.unwrap();
+                            }
                         },
                         Err(err) => {
                             log::warn!("error parsing ipv4 packet, skipping it: {}", err);

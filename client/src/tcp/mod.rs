@@ -103,10 +103,12 @@ impl crate::tunnel::VPNUpstream for TcpUpstream {
                         match n {
                             Ok(Some(n)) => {
                                 log::debug!("sending data to kernel: {}", n);
-                                tx.send(Response{
+                                if tx.send(Response{ // receiver
                                     payload: buf[..n].to_vec(),
                                     flow_key: key,
-                                }).unwrap();
+                                }).is_err() {
+                                    return;
+                                }
                             },
                             Ok(None) => {
                                 log::debug!("received none bytes");
