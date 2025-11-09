@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::tunnel::L3Stream;
 use std::io::{Read, Write};
-use tokio::io::unix::AsyncFd;
+use tokio::io::{self, Interest, Ready, unix::AsyncFd};
 use tun::{Device, configure};
 
 pub(crate) struct Tun {
@@ -27,22 +27,51 @@ impl Tun {
 }
 
 impl L3Stream for Tun {
-    async fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
+    async fn do_io(
+        &mut self,
+        read_buf: &mut [u8],
+        write_buf: &mut Option<Vec<u8>>,
+    ) -> Result<usize> {
         loop {
-            let mut guard = self.fd.readable_mut().await?;
-            match guard.try_io(|inner| inner.get_mut().read(buf)) {
-                Ok(result) => return result.map_err(|e| e.into()),
-                Err(_would_block) => continue,
+            let mut interest = Interest::READABLE;
+            if write_buf.is_some() {
+                interest |= Interest::WRITABLE;
             }
-        }
-    }
 
-    async fn send(&mut self, buf: &[u8]) -> Result<usize> {
-        loop {
-            let mut guard = self.fd.writable_mut().await?;
-            match guard.try_io(|inner| inner.get_mut().write(buf)) {
-                Ok(result) => return result.map_err(|e| e.into()),
-                Err(_would_block) => continue,
+            let mut guard = self.fd.ready_mut(interest).await?;
+
+            if let Some(wrt_buf) = write_buf
+                && guard.ready().is_writable()
+            {
+                match guard.get_inner_mut().write(wrt_buf) {
+                    Ok(n) => {
+                        wrt_buf.drain(..n);
+                        if wrt_buf.is_empty() {
+                            *write_buf = None;
+                        }
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        guard.clear_ready_matching(Ready::WRITABLE);
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                }
+            }
+
+            if guard.ready().is_readable() {
+                match guard.get_inner_mut().read(read_buf) {
+                    Ok(n) => {
+                        return Ok(n);
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        guard.clear_ready_matching(Ready::READABLE);
+                        continue;
+                    }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
+                }
             }
         }
     }

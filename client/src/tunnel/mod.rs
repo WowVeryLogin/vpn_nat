@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
@@ -33,8 +33,11 @@ pub(crate) struct Response {
 }
 
 pub(crate) trait L3Stream {
-    async fn recv(&mut self, buf: &mut [u8]) -> Result<usize>;
-    async fn send(&mut self, buf: &[u8]) -> Result<usize>;
+    async fn do_io(
+        &mut self,
+        read_buf: &mut [u8],
+        write_buf: &mut Option<Vec<u8>>,
+    ) -> Result<usize>;
 }
 
 pub(crate) trait VPNUpstream {
@@ -162,21 +165,30 @@ impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
     }
 
     pub(crate) async fn loop_read(&mut self) {
+        let mut buf = [0u8; 65534];
+        let mut responses: VecDeque<Vec<u8>> = VecDeque::new();
+        let mut response = None;
+
         loop {
-            let mut buf = [0u8; 65534];
+            if response.is_none() {
+                response = responses.pop_front();
+            }
+
             tokio::select! {
-                packet = self.tun.recv(&mut buf) => {
-                    let packet = match packet {
-                        Ok(n) => &buf[..n],
+                io_result = self.tun.do_io(&mut buf, &mut response) => {
+                    let packet = match io_result {
+                        Ok(read_size) => {
+                            &buf[..read_size]
+                        },
                         Err(err) => {
-                            log::error!("error reading ipv4 packet, {}", err);
+                            log::error!("error from tun io, {}", err);
                             return;
                         }
                     };
                     match Ipv4HeaderSlice::from_slice(packet) {
                         Ok(header) => {
                             if let Ok(Some(response)) = self.process_packet(header, packet) {
-                                self.tun.send(&response).await.unwrap();
+                                responses.push_back(response);
                             }
                         },
                         Err(err) => {
@@ -187,14 +199,14 @@ impl<TUN: L3Stream, UPSTREAM: VPNUpstream> Tunnel<TUN, UPSTREAM> {
                 },
                 Some(response) = self.response_ipv4_stream.recv() => {
                     if let Some(flow) = self.flow_table.get(&response.flow_key) {
-                        self.tun.send(&craft_ipv4_tcp(
+                        responses.push_back(craft_ipv4_tcp(
                             flow.remote_addr,
                             flow.local_addr,
                             flow.our_seq,
                             flow.our_ack,
                             0x18, // PSH + ACK
                             &response.payload,
-                        )).await.unwrap();
+                        ));
                     }
                 },
             };
